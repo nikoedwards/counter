@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>运动计数器</title>
+    <style>
+        /* 基础样式 */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+            color: #333;
+            user-select: none;
+        }
+        .counter-panel {
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            margin-bottom: 25px;
+            padding: 20px;
+            text-align: center;
+        }
+        .counter-panel h2 {
+            font-size: 24px;
+            margin-top: 0;
+            margin-bottom: 15px;
+            color: #1c1c1e;
+        }
+        /* 数字显示 */
+        .count-display {
+            font-size: 80px;
+            font-weight: bold;
+            margin: 15px 0 30px 0;
+            color: #007aff;
+            transition: color 0.3s;
+        }
+        /* 按钮容器 */
+        .buttons-container {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+        }
+        .btn {
+            padding: 15px 0;
+            font-size: 20px;
+            font-weight: bold;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+            -webkit-tap-highlight-color: rgba(0,0,0,0.1);
+            color: white;
+        }
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        /* --- 按钮主题和布局 --- */
+
+        /* 减法按钮（主要操作：完成次数，剩余减少） */
+        .btn-minus-action {
+            background-color: #34c759; /* 完成操作用绿色 */
+            flex-grow: 1; /* 占据较大空间 */
+            flex-basis: 25%;
+        }
+        /* 加法按钮（辅助操作：撤销/修正，剩余增加） */
+        .btn-plus-action {
+            background-color: #ff3b30; /* 修正操作用红色 */
+            flex-grow: 0; /* 较小空间 */
+            width: 80px; /* 固定宽度，突出辅助性 */
+        }
+        
+        /* 目标达成后的样式（剩余 0 时） */
+        .completed .count-display {
+            color: #34c759;
+        }
+
+        /* 数据统计面板样式（保持不变） */
+        #statistics-panel { margin-top: 40px; }
+        #statistics-panel h2 {
+            color: #007aff;
+            font-size: 20px;
+        }
+        #history-list {
+            list-style: none;
+            padding: 0;
+            text-align: left;
+        }
+        #history-list li {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #eee;
+            font-size: 16px;
+        }
+        #history-list li:last-child {
+            border-bottom: none;
+        }
+        .date {
+            font-weight: bold;
+            color: #555;
+        }
+        .counts span {
+            margin-left: 15px;
+            font-weight: 600;
+        }
+        .pushup-count { color: #34c759; }
+        .squat-count { color: #007aff; }
+    </style>
+</head>
+<body>
+
+    <div id="pushup-panel" class="counter-panel">
+        <h2>push up</h2>
+        <div id="pushup-count" class="count-display">300</div>
+        <div class="buttons-container">
+            <button class="btn btn-minus-action" onclick="updateCount('pushup', -10)">-10</button>
+            <button class="btn btn-minus-action" onclick="updateCount('pushup', -5)">-5</button>
+            <button class="btn btn-minus-action" onclick="updateCount('pushup', -1)">-1</button>
+            
+            <button class="btn btn-plus-action" onclick="updateCount('pushup', 1)">+1</button>
+        </div>
+    </div>
+
+    <div id="squat-panel" class="counter-panel">
+        <h2>squat</h2>
+        <div id="squat-count" class="count-display">300</div>
+        <div class="buttons-container">
+            <button class="btn btn-minus-action" onclick="updateCount('squat', -10)">-10</button>
+            <button class="btn btn-minus-action" onclick="updateCount('squat', -5)">-5</button>
+            <button class="btn btn-minus-action" onclick="updateCount('squat', -1)">-1</button>
+            
+            <button class="btn btn-plus-action" onclick="updateCount('squat', 1)">+1</button>
+        </div>
+    </div>
+
+    <div id="statistics-panel" class="counter-panel">
+        <h2>数据统计</h2>
+        <ul id="history-list">
+            </ul>
+    </div>
+
+
+    <script>
+        // JavaScript 逻辑 (保持与上一个版本的数据存储和重置逻辑一致)
+        const STORAGE_KEY_COUNT = 'daily_workout_remaining_'; 
+        const STORAGE_KEY_DATE = 'daily_workout_date_minimal';
+        const STORAGE_KEY_HISTORY = 'daily_workout_history_v2';
+        const DEFAULT_COUNT = 300; 
+
+        // 格式化日期为 YYYY-MM-DD
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
+        }
+
+        // 1. 检查并重置（每天0点记录并重置）
+        function checkAndReset() {
+            const lastDate = localStorage.getItem(STORAGE_KEY_DATE);
+            const today = new Date().toDateString();
+            
+            if (lastDate && lastDate !== today) {
+                const prevDayCountPushup = parseInt(localStorage.getItem(STORAGE_KEY_COUNT + 'pushup') || DEFAULT_COUNT);
+                const prevDayCountSquat = parseInt(localStorage.getItem(STORAGE_KEY_COUNT + 'squat') || DEFAULT_COUNT);
+                
+                const completedPushup = DEFAULT_COUNT - prevDayCountPushup;
+                const completedSquat = DEFAULT_COUNT - prevDayCountSquat;
+
+                saveHistory(lastDate, completedPushup, completedSquat);
+
+                localStorage.setItem(STORAGE_KEY_COUNT + 'pushup', DEFAULT_COUNT);
+                localStorage.setItem(STORAGE_KEY_COUNT + 'squat', DEFAULT_COUNT);
+            } else if (!lastDate) {
+                localStorage.setItem(STORAGE_KEY_COUNT + 'pushup', DEFAULT_COUNT);
+                localStorage.setItem(STORAGE_KEY_COUNT + 'squat', DEFAULT_COUNT);
+            }
+
+            localStorage.setItem(STORAGE_KEY_DATE, today);
+        }
+
+        // 2. 记录历史数据
+        function saveHistory(dateString, pushup, squat) {
+            let history = JSON.parse(localStorage.getItem(STORAGE_KEY_HISTORY) || '[]');
+            
+            const formattedDate = formatDate(dateString);
+            if (history.findIndex(item => item.date === formattedDate) === -1) {
+                if (pushup >= 0 || squat >= 0) { // 至少记录 0 次，防止误删历史
+                    history.unshift({ 
+                        date: formattedDate,
+                        pushup: pushup,
+                        squat: squat
+                    });
+                    localStorage.setItem(STORAGE_KEY_HISTORY, JSON.stringify(history));
+                }
+            }
+        }
+
+        // 3. 更新计数（核心逻辑修正在此）
+        function updateCount(type, delta) {
+            const key = STORAGE_KEY_COUNT + type;
+            let currentCount = parseInt(localStorage.getItem(key) || DEFAULT_COUNT);
+            
+            // 核心逻辑：
+            // 点击 `-N` (完成 N 次) -> delta 为负数，currentCount + delta -> 数字减少
+            // 点击 `+N` (撤销 N 次) -> delta 为正数，currentCount + delta -> 数字增加
+            let newCount = currentCount + delta; 
+
+            // 限制：确保数字在 0 到 300 之间
+            newCount = Math.min(DEFAULT_COUNT, Math.max(0, newCount));
+
+            // 更新存储和显示
+            localStorage.setItem(key, newCount);
+            updateDisplay(type, newCount);
+        }
+
+        // 4. 更新页面显示（包括颜色渐变）
+        function updateDisplay(type, count) {
+            const countEl = document.getElementById(type + '-count');
+            const panelEl = document.getElementById(type + '-panel');
+            
+            countEl.textContent = count;
+            
+            // 颜色渐变逻辑：从 #007aff (iOS Blue) 到 #34c759 (Green)
+            const progress = 1 - (count / DEFAULT_COUNT); // 0 (剩余300) 到 1 (剩余0)
+            
+            const blue = [0, 122, 255]; 
+            const green = [52, 199, 89]; 
+            
+            let r = Math.round(blue[0] + (green[0] - blue[0]) * progress);
+            let g = Math.round(blue[1] + (green[1] - blue[1]) * progress);
+            let b = Math.round(blue[2] + (green[2] - blue[2]) * progress);
+            
+            const toHex = (c) => c.toString(16).padStart(2, '0');
+            countEl.style.color = `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+
+            if (count === 0) {
+                panelEl.classList.add('completed');
+                if (window.navigator.vibrate) {
+                    window.navigator.vibrate(200); 
+                }
+            } else {
+                panelEl.classList.remove('completed');
+            }
+        }
+
+        // 5. 渲染历史数据
+        function renderHistory() {
+            const historyList = document.getElementById('history-list');
+            let history = JSON.parse(localStorage.getItem(STORAGE_KEY_HISTORY) || '[]');
+            
+            if (history.length === 0) {
+                historyList.innerHTML = '<li>暂无历史记录</li>';
+                return;
+            }
+
+            historyList.innerHTML = history.map(item => `
+                <li>
+                    <span class="date">${item.date}</span>
+                    <span class="counts">
+                        Pushup: <span class="pushup-count">${item.pushup}</span>
+                        Squat: <span class="squat-count">${item.squat}</span>
+                    </span>
+                </li>
+            `).join('');
+        }
+
+        // 页面加载完成后执行
+        document.addEventListener('DOMContentLoaded', () => {
+            checkAndReset();
+            initCounter('pushup');
+            initCounter('squat');
+            renderHistory();
+        });
+        
+        function initCounter(type) {
+            const count = parseInt(localStorage.getItem(STORAGE_KEY_COUNT + type) || DEFAULT_COUNT);
+            updateDisplay(type, count);
+        }
+    </script>
+</body>
+</html>
